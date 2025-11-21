@@ -9,6 +9,6 @@ primarily be for Linux users, but might work on other systems. I will only be cr
 - [ ] print measurements from Sigilent RSDS 1204X-E oscilloscope (USB, SCPI)
 - [ ] print measurements from Brymen 869 multimeter (USB, HID)
 - [ ] print measurements from Sigilent RSDS 1204X-E oscilloscope (LAN, SCPI)
-- [ ] collect measurements from multipile instruments
+- [ ] collect measurements from multiple instruments
 - [ ] create command sets to define when to get measurements
 - [ ] save measurements to file
