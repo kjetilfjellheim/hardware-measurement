@@ -7,7 +7,7 @@ pub struct Args {
 
     /// HID device path
     #[arg(long)]
-    pub hid: Option<String>,
+    pub hid: String,
 
 }
 
