@@ -4,7 +4,12 @@ use crate::instruments::{instrument::Instrument, measurement::Measurement};
 
 const CMD_MEASURE: [u8; 6] = [0xAB, 0xCD, 0x03, 0x5E, 0x01, 0xD9];
 
-pub enum Commands {
+const SEQUENCE_SEND_CMD: [u8; 3] = [0xAB, 0xCD, 0x03];
+
+/**
+ * Enum representing various commands for the Uni-T 161D instrument.
+ */
+pub enum Uni161dCommand {
     MinMax = 65,
     NotMinMax = 66,
     Range = 70,
@@ -60,6 +65,7 @@ impl Unit161dHid {
         let mut buf = vec![0u8; 1 + len];
         buf[0] = len as u8;
         buf[1..].copy_from_slice(data);
+        println!("Writing to HID device: {:?}", buf);
         self.hiddevice.write(&buf).unwrap();
     }
 
@@ -116,7 +122,6 @@ impl Unit161dHid {
                             let received_sum =
                                 ((buf[buf.len() - 2] as u16) << 8) + (buf[buf.len() - 1] as u16);
                             println!(
-                                "Calculated sum=0x{:04X} expected sum=0x{:04X}",
                                 sum, received_sum
                             );
                             if sum != received_sum as u32 {
@@ -135,9 +140,43 @@ impl Unit161dHid {
             }
         }
     }
+
 }
 
 impl Instrument for Unit161dHid {
+
+    /**
+     * Sends a command to the instrument.
+     *
+     * # Arguments
+     * `command` - A Command enum variant representing the command to be sent.
+     */
+    fn command(&self, command: super::instrument::Command) {
+        // Map the command to the device-specific command byte
+        let mut cmd = match command {
+            super::instrument::Command::MinMax => Uni161dCommand::MinMax as u16,
+            super::instrument::Command::NotMinMax => Uni161dCommand::NotMinMax as u16,
+            super::instrument::Command::Range => Uni161dCommand::Range as u16,
+            super::instrument::Command::Auto => Uni161dCommand::Auto as u16,
+            super::instrument::Command::Rel => Uni161dCommand::Rel as u16,
+            super::instrument::Command::Select2 => Uni161dCommand::Select2 as u16,
+            super::instrument::Command::Hold => Uni161dCommand::Hold as u16,
+            super::instrument::Command::Lamp => Uni161dCommand::Lamp as u16,
+            super::instrument::Command::Select1 => Uni161dCommand::Select1 as u16,
+            super::instrument::Command::PMinMax => Uni161dCommand::PMinMax as u16,
+            super::instrument::Command::NotPeak => Uni161dCommand::NotPeak as u16,
+        };
+        let mut cmd_bytes = [0u8; 3];
+        cmd_bytes[0] = (cmd & 0xff) as u8;
+        cmd = cmd + 379;
+        cmd_bytes[1] = (cmd >> 8) as u8;
+        cmd_bytes[2] = (cmd & 0xff) as u8;
+        let mut seq = Vec::new();
+        seq.extend_from_slice(&SEQUENCE_SEND_CMD);
+        seq.extend_from_slice(&cmd_bytes);
+        println!("Sending command sequence: {:?}", &seq);
+        self.write_with_length(&seq);
+    }
     /**
      * Returns the unique identifier of the instrument.
      *

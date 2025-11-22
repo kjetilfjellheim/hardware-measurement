@@ -3,7 +3,7 @@ mod instruments;
 
 use arguments::Args;
 
-use crate::instruments::{instrument::Instrument, unit161d::Unit161dHid};
+use crate::instruments::{instrument::{self, Instrument}, unit161d::Unit161dHid};
 
 fn main() {
     let args = Args::parse_args();
