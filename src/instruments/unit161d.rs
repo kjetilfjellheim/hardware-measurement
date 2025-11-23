@@ -1,15 +1,22 @@
-use std::ffi::CString;
+use std::{ffi::CString, io::Bytes};
 
-use crate::instruments::{instrument::Instrument, measurement::Measurement};
+use crate::{instruments::{instrument::Instrument, measurement::Measurement}};
 
+/**
+ * Command to initiate a measurement on the Uni-T 161D instrument.
+ */
 const CMD_MEASURE: [u8; 6] = [0xAB, 0xCD, 0x03, 0x5E, 0x01, 0xD9];
 
+/**
+ * Sequence to send a command to the Uni-T 161D instrument.
+ */
 const SEQUENCE_SEND_CMD: [u8; 3] = [0xAB, 0xCD, 0x03];
 
 /**
  * Enum representing various commands for the Uni-T 161D instrument.
  */
 pub enum Uni161dCommand {
+    Measure = 94,
     MinMax = 65,
     NotMinMax = 66,
     Range = 70,
@@ -121,9 +128,6 @@ impl Unit161dHid {
                         if index == buf.len() {
                             let received_sum =
                                 ((buf[buf.len() - 2] as u16) << 8) + (buf[buf.len() - 1] as u16);
-                            println!(
-                                sum, received_sum
-                            );
                             if sum != received_sum as u32 {
                                 eprintln!("Checksum mismatch");
                                 return None;
@@ -151,7 +155,7 @@ impl Instrument for Unit161dHid {
      * # Arguments
      * `command` - A Command enum variant representing the command to be sent.
      */
-    fn command(&self, command: super::instrument::Command) {
+    fn command(&self, command: super::instrument::Command) -> Option<Measurement> {
         // Map the command to the device-specific command byte
         let mut cmd = match command {
             super::instrument::Command::MinMax => Uni161dCommand::MinMax as u16,
@@ -165,6 +169,7 @@ impl Instrument for Unit161dHid {
             super::instrument::Command::Select1 => Uni161dCommand::Select1 as u16,
             super::instrument::Command::PMinMax => Uni161dCommand::PMinMax as u16,
             super::instrument::Command::NotPeak => Uni161dCommand::NotPeak as u16,
+            super::instrument::Command::Measure => Uni161dCommand::Measure as u16,
         };
         let mut cmd_bytes = [0u8; 3];
         cmd_bytes[0] = (cmd & 0xff) as u8;
@@ -174,8 +179,8 @@ impl Instrument for Unit161dHid {
         let mut seq = Vec::new();
         seq.extend_from_slice(&SEQUENCE_SEND_CMD);
         seq.extend_from_slice(&cmd_bytes);
-        println!("Sending command sequence: {:?}", &seq);
         self.write_with_length(&seq);
+        self.read_response().and_then(|Bytes| Measurement::parse(Bytes))
     }
     /**
      * Returns the unique identifier of the instrument.
@@ -197,20 +202,4 @@ impl Instrument for Unit161dHid {
             .unwrap_or("Unit161d HID - Unknown Device".to_string())
     }
 
-    /**'
-     * Performs a measurement and returns the result.
-     *
-     * # Returns
-     * An Option containing the Measurement if successful, or None if failed.
-     */
-    fn get_measurement(&self) -> Option<Measurement> {
-        self.write_with_length(&CMD_MEASURE);
-        let res_bytes = self.read_response();
-        if let Some(res_bytes) = res_bytes {
-            return Some(Measurement::new(res_bytes));
-        } else {
-            return None;
-        };
-        
-    }
 }

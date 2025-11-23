@@ -11,18 +11,6 @@ const OVERLOAD: [&str; 8] = [".OL", "O.L", "OL.", "OL", "-.OL", "-O.L", "-OL.", 
 // Strings that indicate level of voltage detected >=50Vrms (50-60Hz)
 const NCV: [&str; 6] = ["EF", "-", "--", "---", "----", "-----"];
 
-// Unit exponents
-fn get_exponent(prefix: char) -> Option<i32> {
-    match prefix {
-        'M' => Some(6),  // mega
-        'k' => Some(3),  // kilo
-        'm' => Some(-3), // milli
-        'u' => Some(-6), // micro
-        'n' => Some(-9), // nano
-        _ => None,
-    }
-}
-
 // Get unit based on mode and range
 fn get_unit(mode: &str, range: &str) -> Option<&'static str> {
     match (mode, range) {
@@ -164,7 +152,11 @@ impl Measurement {
      * # Returns
      * A new Measurement instance.
      */
-    pub fn new(bytes: Vec<u8>) -> Self {
+    pub fn parse(bytes: Vec<u8>) -> Option<Self> {
+        // Ensure we have enough bytes, if not it's an invalid measurement
+        if bytes .len() < 14 {
+            return None;
+        }
         let mode = MODE
             .get(bytes[0] as usize)
             .unwrap_or(&"Unknown")
@@ -192,7 +184,7 @@ impl Measurement {
         let peak_min = bytes[13] & 2 > 0;
         let bar_polarity = bytes[13] & 1 > 0;
 
-        Measurement {
+        Some(Measurement {
             mode,
             range,
             display_value,
@@ -212,6 +204,6 @@ impl Measurement {
             peak_max,
             peak_min,
             bar_polarity,
-        }
+        })
     }
 }
