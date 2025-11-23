@@ -1,11 +1,6 @@
-use std::{ffi::CString, io::Bytes};
+use std::ffi::CString;
 
 use crate::{instruments::{instrument::Instrument, measurement::Measurement}};
-
-/**
- * Command to initiate a measurement on the Uni-T 161D instrument.
- */
-const CMD_MEASURE: [u8; 6] = [0xAB, 0xCD, 0x03, 0x5E, 0x01, 0xD9];
 
 /**
  * Sequence to send a command to the Uni-T 161D instrument.
@@ -173,14 +168,14 @@ impl Instrument for Unit161dHid {
         };
         let mut cmd_bytes = [0u8; 3];
         cmd_bytes[0] = (cmd & 0xff) as u8;
-        cmd = cmd + 379;
+        cmd += 379;
         cmd_bytes[1] = (cmd >> 8) as u8;
         cmd_bytes[2] = (cmd & 0xff) as u8;
         let mut seq = Vec::new();
         seq.extend_from_slice(&SEQUENCE_SEND_CMD);
         seq.extend_from_slice(&cmd_bytes);
         self.write_with_length(&seq);
-        self.read_response().and_then(|Bytes| Measurement::parse(Bytes))
+        self.read_response().and_then(Measurement::parse)
     }
     /**
      * Returns the unique identifier of the instrument.
