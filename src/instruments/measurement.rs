@@ -126,7 +126,7 @@ pub struct Measurement {
     pub display_value: String,
     pub overload: bool,
     pub ncv: bool,
-    pub decimal_value: Option<f64>,  //Todo: Change number representation
+    pub decimal_value: Option<f64>, //Todo: Change number representation
     pub display_unit: String,
     pub progres: u16,
     pub max: bool,
@@ -154,7 +154,7 @@ impl Measurement {
      */
     pub fn parse(bytes: Vec<u8>) -> Option<Self> {
         // Ensure we have enough bytes, if not it's an invalid measurement
-        if bytes .len() < 14 {
+        if bytes.len() < 14 {
             return None;
         }
         let mode = MODE
@@ -177,8 +177,8 @@ impl Measurement {
         let hold = bytes[11] & 2 > 0;
         let rel = bytes[11] & 1 > 0;
         let auto = bytes[12] & 4 > 0;
-        let battery = bytes[12] & 2 > 0;    
-        let hwwarning = bytes[12] & 1 > 0;  
+        let battery = bytes[12] & 2 > 0;
+        let hwwarning = bytes[12] & 1 > 0;
         let dc = bytes[13] & 8 > 0;
         let peak_max = bytes[13] & 4 > 0;
         let peak_min = bytes[13] & 2 > 0;
@@ -194,7 +194,7 @@ impl Measurement {
             display_unit,
             progres,
             max,
-            min,    
+            min,
             hold,
             rel,
             auto,

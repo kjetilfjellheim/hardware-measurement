@@ -1,22 +1,28 @@
 use clap::{Parser, ValueEnum};
 
 /// Hardware measurement arguments
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone, PartialEq)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
+    /// Measurement device
+    #[arg(long)]
+    pub device: Device,
 
     /// HID device path
     #[arg(long)]
-    pub hid: String,
+    pub hid: Option<String>,
+
+    /// USB device path (vendor_id:product_id)
+    #[arg(long)]
+    pub usb: Option<String>,
 
     /// Send command to the instrument
     #[arg(long, value_enum)]
     pub command: Command,
-
 }
 
 impl Args {
-    /** 
+    /**
      * Parses command-line arguments and returns an Args instance.
      *
      * # Returns
@@ -56,4 +62,13 @@ pub enum Command {
     PMinMax,
     /// Disable Peak Min/Max mode
     NotPeak,
+}
+
+/**
+ * Enum representing supported measurement devices.
+ */
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
+pub enum Device {
+    Unit161d,
+    Peaktech4055mv,
 }

@@ -1,6 +1,14 @@
 use std::ffi::CString;
 
-use crate::{instruments::{instrument::Instrument, measurement::Measurement}};
+use async_trait::async_trait;
+
+use crate::{
+    error::ApplicationError,
+    instruments::{
+        instrument::{Command, Instrument},
+        measurement::Measurement,
+    },
+};
 
 /**
  * Sequence to send a command to the Uni-T 161D instrument.
@@ -43,17 +51,26 @@ impl Unit161dHid {
      * # Returns
      * A new Unit161dHid instance.
      */
-    pub fn new(hid_device_path: &str) -> Self {
-        let api = hidapi::HidApi::new().unwrap();
-        let c_path = CString::new(hid_device_path.to_string()).unwrap();
+    pub fn new(hid_device_path: &str) -> Result<Self, ApplicationError> {
+        let api = hidapi::HidApi::new().map_err(|e| {
+            ApplicationError::HidError(format!("Failed to create HID API instance: {}", e))
+        })?;
+        let c_path = CString::new(hid_device_path.to_string()).map_err(|e| {
+            ApplicationError::HidError(format!(
+                "Failed to create CString for HID device path: {}",
+                e
+            ))
+        })?;
         let hiddevice = match api.open_path(&c_path) {
             Ok(dev) => dev,
             Err(e) => {
-                eprintln!("Failed to open HID device at {}: {}", hid_device_path, e);
-                std::process::exit(1);
+                return Err(ApplicationError::HidError(format!(
+                    "Failed to open HID device at {}: {}",
+                    hid_device_path, e
+                )));
             }
         };
-        Unit161dHid { hiddevice }
+        Ok(Unit161dHid { hiddevice })
     }
 
     /**
@@ -62,13 +79,15 @@ impl Unit161dHid {
      * # Arguments
      * `data` - A byte slice representing the data to be written.
      */
-    fn write_with_length(&self, data: &[u8]) {
+    fn write_with_length(&self, data: &[u8]) -> Result<(), ApplicationError> {
         let len = data.len();
         let mut buf = vec![0u8; 1 + len];
         buf[0] = len as u8;
         buf[1..].copy_from_slice(data);
-        println!("Writing to HID device: {:?}", buf);
-        self.hiddevice.write(&buf).unwrap();
+        self.hiddevice.write(&buf).map_err(|e| {
+            ApplicationError::HidError(format!("Failed to write to HID device: {}", e))
+        })?;
+        Ok(())
     }
 
     /**
@@ -76,20 +95,20 @@ impl Unit161dHid {
      * # Returns
      * An Option containing the response bytes if successful, or None if failed.
      */
-    fn read_response(&self) -> Option<Vec<u8>> {
-        // State machine: 0=init, 1=0xAB received, 2=0xCD received, 3=we have length
+    fn read_response(&self) -> Result<Option<Vec<u8>>, ApplicationError> {
         let mut state = 0;
         let mut buf: Vec<u8> = Vec::new();
         let mut index: usize = 0;
         let mut sum: u32 = 0;
-
         loop {
             let mut x = [0u8; 64];
             match self.hiddevice.read(&mut x) {
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("Read error: {}", e);
-                    return None;
+                    return Err(ApplicationError::HidError(format!(
+                        "Failed to read from HID device: {}",
+                        e
+                    )));
                 }
             }
             for &b in &x[1..] {
@@ -107,9 +126,10 @@ impl Unit161dHid {
                         if b == 0xCD {
                             state = 2;
                         } else {
-                            eprintln!("Unexpected byte 0x{:02X} in state {}", b, state);
-                            state = 0;
-                            sum = 0;
+                            return Err(ApplicationError::HidError(format!(
+                                "Unexpected byte 0x{:02X} in state {}",
+                                b, state
+                            )));
                         }
                     }
                     2 => {
@@ -124,33 +144,34 @@ impl Unit161dHid {
                             let received_sum =
                                 ((buf[buf.len() - 2] as u16) << 8) + (buf[buf.len() - 1] as u16);
                             if sum != received_sum as u32 {
-                                eprintln!("Checksum mismatch");
-                                return None;
+                                return Err(ApplicationError::HidError("Checksum mismatch".into()));
                             }
                             // Drop last 2 bytes (checksum)
                             buf.truncate(buf.len() - 2);
-                            return Some(buf);
+                            return Ok(Some(buf));
                         }
                     }
                     _ => {
-                        eprintln!("Unexpected byte 0x{:02X} in state {}", b, state);
+                        return Err(ApplicationError::HidError(format!(
+                            "Unexpected byte 0x{:02X} in state {}",
+                            b, state
+                        )));
                     }
                 }
             }
         }
     }
-
 }
 
+#[async_trait(?Send)]
 impl Instrument for Unit161dHid {
-
     /**
      * Sends a command to the instrument.
      *
      * # Arguments
      * `command` - A Command enum variant representing the command to be sent.
      */
-    fn command(&self, command: super::instrument::Command) -> Option<Measurement> {
+    async fn command(&self, command: Command) -> Result<Option<Measurement>, ApplicationError> {
         // Map the command to the device-specific command byte
         let mut cmd = match command {
             super::instrument::Command::MinMax => Uni161dCommand::MinMax as u16,
@@ -174,8 +195,8 @@ impl Instrument for Unit161dHid {
         let mut seq = Vec::new();
         seq.extend_from_slice(&SEQUENCE_SEND_CMD);
         seq.extend_from_slice(&cmd_bytes);
-        self.write_with_length(&seq);
-        self.read_response().and_then(Measurement::parse)
+        let _ = self.write_with_length(&seq)?;
+        Ok(self.read_response()?.and_then(Measurement::parse))
     }
     /**
      * Returns the unique identifier of the instrument.
@@ -196,5 +217,4 @@ impl Instrument for Unit161dHid {
             })
             .unwrap_or("Unit161d HID - Unknown Device".to_string())
     }
-
 }
