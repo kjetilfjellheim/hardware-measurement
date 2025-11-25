@@ -18,7 +18,7 @@ async fn main() -> Result<(), ApplicationError> {
         arguments::Device::Unit161d => get_unit161d(&args)?,
         arguments::Device::Peaktech4055mv => get_peaktech4055mv(&args).await?,
     };
-    let measurement = instrument.command(args.command.into()).await?;
+    let measurement = instrument.command(args.commands.iter().cloned().map(Into::into).collect()).await?;
     if let Some(measurement) = measurement {
         println!("{:?}", measurement);
     }

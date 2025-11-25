@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use crate::{
     error::ApplicationError,
     instruments::{
-        instrument::{Command, Instrument},
+        instrument::Instrument,
         measurement::Measurement,
     },
 };
@@ -14,24 +14,6 @@ use crate::{
  * Sequence to send a command to the Uni-T 161D instrument.
  */
 const SEQUENCE_SEND_CMD: [u8; 3] = [0xAB, 0xCD, 0x03];
-
-/**
- * Enum representing various commands for the Uni-T 161D instrument.
- */
-pub enum Uni161dCommand {
-    Measure = 94,
-    MinMax = 65,
-    NotMinMax = 66,
-    Range = 70,
-    Auto = 71,
-    Rel = 72,
-    Select2 = 73,
-    Hold = 74,
-    Lamp = 75,
-    Select1 = 76,
-    PMinMax = 77,
-    NotPeak = 78,
-}
 
 /**
  * Module for the Unit161d instrument using HID API.
@@ -171,32 +153,25 @@ impl Instrument for Unit161dHid {
      * # Arguments
      * `command` - A Command enum variant representing the command to be sent.
      */
-    async fn command(&self, command: Command) -> Result<Option<Measurement>, ApplicationError> {
-        // Map the command to the device-specific command byte
-        let mut cmd = match command {
-            super::instrument::Command::MinMax => Uni161dCommand::MinMax as u16,
-            super::instrument::Command::NotMinMax => Uni161dCommand::NotMinMax as u16,
-            super::instrument::Command::Range => Uni161dCommand::Range as u16,
-            super::instrument::Command::Auto => Uni161dCommand::Auto as u16,
-            super::instrument::Command::Rel => Uni161dCommand::Rel as u16,
-            super::instrument::Command::Select2 => Uni161dCommand::Select2 as u16,
-            super::instrument::Command::Hold => Uni161dCommand::Hold as u16,
-            super::instrument::Command::Lamp => Uni161dCommand::Lamp as u16,
-            super::instrument::Command::Select1 => Uni161dCommand::Select1 as u16,
-            super::instrument::Command::PMinMax => Uni161dCommand::PMinMax as u16,
-            super::instrument::Command::NotPeak => Uni161dCommand::NotPeak as u16,
-            super::instrument::Command::Measure => Uni161dCommand::Measure as u16,
-        };
-        let mut cmd_bytes = [0u8; 3];
-        cmd_bytes[0] = (cmd & 0xff) as u8;
-        cmd += 379;
-        cmd_bytes[1] = (cmd >> 8) as u8;
-        cmd_bytes[2] = (cmd & 0xff) as u8;
-        let mut seq = Vec::new();
-        seq.extend_from_slice(&SEQUENCE_SEND_CMD);
-        seq.extend_from_slice(&cmd_bytes);
-        let _ = self.write_with_length(&seq)?;
-        Ok(self.read_response()?.and_then(Measurement::parse))
+    async fn command(&self, commands: Vec<String>) -> Result<Option<Measurement>, ApplicationError> {
+        let mut measurement: Option<Measurement> = None;
+        for command in commands {
+            let mut cmd = Uni161dCommand::try_from(command)? as u16;
+            let mut cmd_bytes = [0u8; 3];
+            cmd_bytes[0] = (cmd & 0xff) as u8;
+            cmd += 379;
+            cmd_bytes[1] = (cmd >> 8) as u8;
+            cmd_bytes[2] = (cmd & 0xff) as u8;
+            let mut seq = Vec::new();
+            seq.extend_from_slice(&SEQUENCE_SEND_CMD);
+            seq.extend_from_slice(&cmd_bytes);
+            let _ = self.write_with_length(&seq)?;
+            // Only Measure command returns a measurement. All other commands return nothing.
+            if let Some(parsed_measurement) = self.read_response()?.and_then(Measurement::parse) {
+                measurement = Some(parsed_measurement); 
+            }
+        }
+        Ok(measurement)
     }
     /**
      * Returns the unique identifier of the instrument.
@@ -216,5 +191,48 @@ impl Instrument for Unit161dHid {
                 )
             })
             .unwrap_or("Unit161d HID - Unknown Device".to_string())
+    }
+}
+
+/**
+ * Enum representing various commands for the Uni-T 161D instrument.
+ */
+pub enum Uni161dCommand {
+    Measure = 94,
+    MinMax = 65,
+    NotMinMax = 66,
+    Range = 70,
+    Auto = 71,
+    Rel = 72,
+    Select2 = 73,
+    Hold = 74,
+    Lamp = 75,
+    Select1 = 76,
+    PMinMax = 77,
+    NotPeak = 78,
+}
+
+impl TryFrom<String> for Uni161dCommand {
+    type Error = ApplicationError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "Measure" => Ok(Uni161dCommand::Measure),
+            "MinMax" => Ok(Uni161dCommand::MinMax),
+            "NotMinMax" => Ok(Uni161dCommand::NotMinMax),
+            "Range" => Ok(Uni161dCommand::Range),
+            "Auto" => Ok(Uni161dCommand::Auto),
+            "Rel" => Ok(Uni161dCommand::Rel),
+            "Select2" => Ok(Uni161dCommand::Select2),
+            "Hold" => Ok(Uni161dCommand::Hold),
+            "Lamp" => Ok(Uni161dCommand::Lamp),
+            "Select1" => Ok(Uni161dCommand::Select1),
+            "PMinMax" => Ok(Uni161dCommand::PMinMax),
+            "NotPeak" => Ok(Uni161dCommand::NotPeak),
+            _ => Err(ApplicationError::CommandError(format!(
+                "Unknown command: {}",
+                value
+            ))),
+        }
     }
 }

@@ -16,9 +16,15 @@ pub struct Args {
     #[arg(long)]
     pub usb: Option<String>,
 
-    /// Send command to the instrument
-    #[arg(long, value_enum)]
-    pub command: Command,
+    /// Send commands to the instrument
+    /// Suppported commands are instrument specific.
+    ///
+    /// Unit161d
+    /// MinMax, NotMinMax, Range, Auto, Rel, Select2, Hold, Lamp, Select1, PMinMax, NotPeak, Measure
+    /// Peaktech4055mv
+    /// Apply:Waveform [Frequency, Amplitude, Offset]
+    #[arg(long, num_args=1.., name = "command")]
+    pub commands: Vec<String>,
 }
 
 impl Args {
@@ -31,37 +37,6 @@ impl Args {
     pub fn parse_args() -> Self {
         Args::parse()
     }
-}
-
-/**
- * Enum representing various commands that can be sent to the instrument.
- */
-#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
-pub enum Command {
-    /// Perform a measurement
-    Measure,
-    /// Enable Min/Max mode
-    MinMax,
-    /// Disable Min/Max mode
-    NotMinMax,
-    /// Set range manually
-    Range,
-    /// Enable Auto mode
-    Auto,
-    /// Enable Relative mode
-    Rel,
-    /// Select input 2  
-    Select2,
-    /// Hold the current measurement
-    Hold,
-    /// Turn on the backlight lamp
-    Lamp,
-    /// Select input 1
-    Select1,
-    /// Enable Peak Min/Max mode
-    PMinMax,
-    /// Disable Peak Min/Max mode
-    NotPeak,
 }
 
 /**
