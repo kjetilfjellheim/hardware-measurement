@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use crate::{
     error::ApplicationError,
     instruments::{
-        instrument::Instrument,
-        measurement::Measurement,
+        instrument::{Communication, Reading},
+        unit161d::reading::Unit161dReading,
     },
 };
 
@@ -35,10 +35,10 @@ impl Unit161dHid {
      */
     pub fn new(hid_device_path: &str) -> Result<Self, ApplicationError> {
         let api = hidapi::HidApi::new().map_err(|e| {
-            ApplicationError::HidError(format!("Failed to create HID API instance: {}", e))
+            ApplicationError::Hid(format!("Failed to create HID API instance: {}", e))
         })?;
         let c_path = CString::new(hid_device_path.to_string()).map_err(|e| {
-            ApplicationError::HidError(format!(
+            ApplicationError::Hid(format!(
                 "Failed to create CString for HID device path: {}",
                 e
             ))
@@ -46,7 +46,7 @@ impl Unit161dHid {
         let hiddevice = match api.open_path(&c_path) {
             Ok(dev) => dev,
             Err(e) => {
-                return Err(ApplicationError::HidError(format!(
+                return Err(ApplicationError::Hid(format!(
                     "Failed to open HID device at {}: {}",
                     hid_device_path, e
                 )));
@@ -67,7 +67,7 @@ impl Unit161dHid {
         buf[0] = len as u8;
         buf[1..].copy_from_slice(data);
         self.hiddevice.write(&buf).map_err(|e| {
-            ApplicationError::HidError(format!("Failed to write to HID device: {}", e))
+            ApplicationError::Hid(format!("Failed to write to HID device: {}", e))
         })?;
         Ok(())
     }
@@ -87,7 +87,7 @@ impl Unit161dHid {
             match self.hiddevice.read(&mut x) {
                 Ok(_) => {}
                 Err(e) => {
-                    return Err(ApplicationError::HidError(format!(
+                    return Err(ApplicationError::Hid(format!(
                         "Failed to read from HID device: {}",
                         e
                     )));
@@ -108,7 +108,7 @@ impl Unit161dHid {
                         if b == 0xCD {
                             state = 2;
                         } else {
-                            return Err(ApplicationError::HidError(format!(
+                            return Err(ApplicationError::Hid(format!(
                                 "Unexpected byte 0x{:02X} in state {}",
                                 b, state
                             )));
@@ -126,7 +126,7 @@ impl Unit161dHid {
                             let received_sum =
                                 ((buf[buf.len() - 2] as u16) << 8) + (buf[buf.len() - 1] as u16);
                             if sum != received_sum as u32 {
-                                return Err(ApplicationError::HidError("Checksum mismatch".into()));
+                                return Err(ApplicationError::Hid("Checksum mismatch".into()));
                             }
                             // Drop last 2 bytes (checksum)
                             buf.truncate(buf.len() - 2);
@@ -134,7 +134,7 @@ impl Unit161dHid {
                         }
                     }
                     _ => {
-                        return Err(ApplicationError::HidError(format!(
+                        return Err(ApplicationError::Hid(format!(
                             "Unexpected byte 0x{:02X} in state {}",
                             b, state
                         )));
@@ -146,15 +146,18 @@ impl Unit161dHid {
 }
 
 #[async_trait(?Send)]
-impl Instrument for Unit161dHid {
+impl Communication for Unit161dHid {
     /**
      * Sends a command to the instrument.
      *
      * # Arguments
      * `command` - A Command enum variant representing the command to be sent.
      */
-    async fn command(&self, commands: Vec<String>) -> Result<Option<Measurement>, ApplicationError> {
-        let mut measurement: Option<Measurement> = None;
+    async fn command(
+        &self,
+        commands: Vec<String>,
+    ) -> Result<Option<Box<dyn Reading>>, ApplicationError> {
+        let mut measurement: Option<Box<dyn Reading>> = None;
         for command in commands {
             let mut cmd = Uni161dCommand::try_from(command)? as u16;
             let mut cmd_bytes = [0u8; 3];
@@ -167,8 +170,8 @@ impl Instrument for Unit161dHid {
             seq.extend_from_slice(&cmd_bytes);
             let _ = self.write_with_length(&seq)?;
             // Only Measure command returns a measurement. All other commands return nothing.
-            if let Some(parsed_measurement) = self.read_response()?.and_then(Measurement::parse) {
-                measurement = Some(parsed_measurement); 
+            if let Some(parsed_measurement) = self.read_response()?.and_then(Unit161dReading::parse){
+                measurement = Some(Box::new(parsed_measurement));
             }
         }
         Ok(measurement)
@@ -197,6 +200,7 @@ impl Instrument for Unit161dHid {
 /**
  * Enum representing various commands for the Uni-T 161D instrument.
  */
+#[derive(Debug, PartialEq)]
 pub enum Uni161dCommand {
     Measure = 94,
     MinMax = 65,
@@ -229,10 +233,28 @@ impl TryFrom<String> for Uni161dCommand {
             "Select1" => Ok(Uni161dCommand::Select1),
             "PMinMax" => Ok(Uni161dCommand::PMinMax),
             "NotPeak" => Ok(Uni161dCommand::NotPeak),
-            _ => Err(ApplicationError::CommandError(format!(
+            _ => Err(ApplicationError::Command(format!(
                 "Unknown command: {}",
                 value
             ))),
         }
+    }
+}
+
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_try_from_command() {
+        assert_eq!(
+            Uni161dCommand::try_from("Measure".to_string()).unwrap(),
+            Uni161dCommand::Measure
+        );
+        assert_eq!(
+            Uni161dCommand::try_from("MinMax".to_string()).unwrap(),
+            Uni161dCommand::MinMax
+        );
+        assert!(Uni161dCommand::try_from("Unknown".to_string()).is_err());
+
     }
 }

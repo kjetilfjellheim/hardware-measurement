@@ -1,15 +1,18 @@
 use async_trait::async_trait;
+
+use crate::{
+    error::ApplicationError,
+    instruments::instrument::{Communication, Reading},
+};
 use nusb::{
     list_devices,
     transfer::{Buffer, Bulk, Out},
     DeviceInfo,
 };
 
-use crate::{
-    error::ApplicationError,
-    instruments::{instrument::Instrument, measurement::Measurement},
-};
-
+/**
+ * USB Bulk OUT endpoint address for Peaktech4055mv.
+ */
 const BULK_OUT_ADDRESS: u8 = 0x02;
 
 /**
@@ -34,25 +37,25 @@ impl Peaktech4055mv {
         let device_path = device.split(":").collect::<Vec<&str>>();
         let vendor_id = device_path
             .first()
-            .ok_or_else(|| ApplicationError::UsbError("Missing vendor ID".into()))?
+            .ok_or_else(|| ApplicationError::Usb("Missing vendor ID".into()))?
             .parse()
-            .map_err(|e| ApplicationError::UsbError(format!("Invalid vendor ID: {}", e)))?;
+            .map_err(|e| ApplicationError::Usb(format!("Invalid vendor ID: {}", e)))?;
         let product_id = device_path
             .get(1)
-            .ok_or_else(|| ApplicationError::UsbError("Missing product ID".into()))?
+            .ok_or_else(|| ApplicationError::Usb("Missing product ID".into()))?
             .parse()
-            .map_err(|e| ApplicationError::UsbError(format!("Invalid product ID: {}", e)))?;
+            .map_err(|e| ApplicationError::Usb(format!("Invalid product ID: {}", e)))?;
         let device = list_devices()
             .await
-            .map_err(|e| ApplicationError::UsbError(format!("Could not list usb devices: {}", e)))?
+            .map_err(|e| ApplicationError::Usb(format!("Could not list usb devices: {}", e)))?
             .find(|dev| dev.vendor_id() == vendor_id && dev.product_id() == product_id)
-            .ok_or_else(|| ApplicationError::UsbError("Peaktech4055mv device not found".into()))?;
+            .ok_or_else(|| ApplicationError::Usb("Peaktech4055mv device not found".into()))?;
         Ok(Self { device })
     }
 }
 
 #[async_trait(?Send)]
-impl Instrument for Peaktech4055mv {
+impl Communication for Peaktech4055mv {
     /**
      * Sends a command to the instrument.
      *
@@ -62,7 +65,7 @@ impl Instrument for Peaktech4055mv {
     async fn command(
         &self,
         commands: Vec<String>,
-    ) -> Result<Option<Measurement>, ApplicationError> {
+    ) -> Result<Option<Box<dyn Reading>>, ApplicationError> {
         let parsed_commands: Vec<Box<dyn Peaktech4055mvCommand>> = commands
             .iter()
             .map(
@@ -74,15 +77,15 @@ impl Instrument for Peaktech4055mv {
 
         let open_device =
             self.device.open().await.map_err(|e| {
-                ApplicationError::UsbError(format!("Could not open usb device: {}", e))
+                ApplicationError::Usb(format!("Could not open usb device: {}", e))
             })?;
         let interface = open_device.claim_interface(0).await.map_err(|e| {
-            ApplicationError::UsbError(format!("Could not open interface 0: {}", e))
+            ApplicationError::Usb(format!("Could not open interface 0: {}", e))
         })?;
         // Get the endpoint and submit transfer
         let mut endpoint = interface
             .endpoint::<Bulk, Out>(BULK_OUT_ADDRESS)
-            .map_err(|e| ApplicationError::UsbError(format!("Failed to get endpoint: {}", e)))?;
+            .map_err(|e| ApplicationError::Usb(format!("Failed to get endpoint: {}", e)))?;
 
         for command in parsed_commands {
             let command_string = command.to_command_string();
@@ -95,7 +98,7 @@ impl Instrument for Peaktech4055mv {
             match completion.status {
                 Ok(()) => {}
                 Err(e) => {
-                    return Err(ApplicationError::CommandError(format!(
+                    return Err(ApplicationError::Command(format!(
                         "Failed to send command {:?}: {:?}",
                         command_string, e
                     )))
@@ -181,7 +184,7 @@ impl Peaktech4055mvCommand for Peaktech4055mvCommandApply {
             "Card" => Waveform::Card,
             "Quake" => Waveform::Quake,
             _ => {
-                return Err(ApplicationError::CommandError(format!(
+                return Err(ApplicationError::Command(format!(
                     "Unknown waveform: {}",
                     waveform_str
                 )))
@@ -201,22 +204,22 @@ impl Peaktech4055mvCommand for Peaktech4055mvCommandApply {
             .map(|_| parts[2].trim().to_string());
 
         if parts.len() > 3 {
-            return Err(ApplicationError::CommandError(
+            return Err(ApplicationError::Command(
                 "Too many parameters for Apply command".into(),
             ));
         }
         if waveform_str.is_empty() {
-            return Err(ApplicationError::CommandError(
+            return Err(ApplicationError::Command(
                 "Waveform type is required for Apply command".into(),
             ));
-        }        
+        }
         if amplitude.is_some() && frequency.is_none() {
-            return Err(ApplicationError::CommandError(
+            return Err(ApplicationError::Command(
                 "Frequency cannot be empty if provided".into(),
             ));
         }
         if offset.is_some() && amplitude.is_none() {
-            return Err(ApplicationError::CommandError(
+            return Err(ApplicationError::Command(
                 "Amplitude cannot be empty if provided".into(),
             ));
         }
@@ -254,24 +257,53 @@ impl Peaktech4055mvCommand for Peaktech4055mvCommandApply {
 }
 
 impl Peaktech4055mvCommand for Peaktech4055mvCommandReset {
+    /**
+    * Parses the Reset command.
+    *
+    * # Arguments
+    * `cmd` - A string slice representing the command.
+    *
+    * # Returns
+    * A Peaktech4055mvCommandReset instance.
+     */
     fn parse(_cmd: &str) -> Result<Self, ApplicationError> {
         Ok(Peaktech4055mvCommandReset)
     }
 
+    /**
+     * Converts the command into a string representation.
+     *
+     * # Returns
+     * A String representing the command.
+     */
     fn to_command_string(&self) -> String {
         "*RST\n".to_string()
     }
 }
 
 impl Peaktech4055mvCommand for Peaktech4055mvCommandRaw {
+
+    /**
+    * Parses a raw command string.
+    *
+    * # Arguments
+    * `cmd` - A string slice representing the command.
+    *
+    * # Returns
+    * A Peaktech4055mvCommandRaw instance.
+    */
     fn parse(cmd: &str) -> Result<Self, ApplicationError> {
         let mut str = cmd.replace("Raw:", "");
-        str.push_str("\n");
-        Ok(Peaktech4055mvCommandRaw {
-            command: str,
-        })
+        str.push('\n');
+        Ok(Peaktech4055mvCommandRaw { command: str })
     }
 
+    /**
+     * Converts the command into a string representation.
+     *
+     * # Returns
+     * A String representing the command.
+     */
     fn to_command_string(&self) -> String {
         self.command.clone()
     }
@@ -323,7 +355,7 @@ impl TryFrom<String> for Box<dyn Peaktech4055mvCommand> {
 
 #[cfg(test)]
 mod test {
-    use crate::instruments::peaktech4055mv::Peaktech4055mvCommand;
+    use crate::instruments::peaktech4055mv::instrumentation::Peaktech4055mvCommand;
 
     const APPLY_COMMAND_SIN: &str = "Apply:Sin 10kHz, 1.2, 0.5\n";
     const APPLY_COMMAND_SQU: &str = "Apply:Squ 10kHz, 1.5, 0.1\n";
@@ -361,7 +393,10 @@ mod test {
 
     #[test]
     fn test_successful_raw() {
-        let cmd: Box<dyn Peaktech4055mvCommand> = "Raw:Apply:Sin 10kHz, 1.2, 0.5".to_string().try_into().unwrap();
+        let cmd: Box<dyn Peaktech4055mvCommand> = "Raw:Apply:Sin 10kHz, 1.2, 0.5"
+            .to_string()
+            .try_into()
+            .unwrap();
         assert_eq!(cmd.to_command_string(), APPLY_COMMAND_SIN);
     }
 

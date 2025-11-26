@@ -1,3 +1,5 @@
+use crate::{error::ApplicationError, instruments::instrument::Reading};
+
 // Decoded modes
 const MODE: [&str; 31] = [
     "ACV", "ACmV", "DCV", "DCmV", "Hz", "%", "OHM", "CONT", "DIDOE", "CAP", "°C", "°F", "DCuA",
@@ -108,10 +110,26 @@ fn get_unit(mode: &str, range: &str) -> Option<&'static str> {
     }
 }
 
+/**
+ * Checks if the display value indicates overload.
+ * # Arguments
+ * `value` - A string slice representing the display value.
+ * 
+ * # Returns
+ * A boolean indicating whether the value represents an overload.
+ */
 fn is_overload(value: &str) -> bool {
     OVERLOAD.contains(&value)
 }
 
+/**
+ * Checks if the display value indicates NCV (Non-Contact Voltage).
+ * # Arguments
+ * `value` - A string slice representing the display value.
+ * 
+ * # Returns
+ * A boolean indicating whether the value represents NCV.
+ */
 fn is_ncv(value: &str) -> bool {
     NCV.contains(&value)
 }
@@ -120,7 +138,7 @@ fn is_ncv(value: &str) -> bool {
 * Represents a measurement taken by an instrument.
  */
 #[derive(Debug)]
-pub struct Measurement {
+pub struct Unit161dReading {
     pub mode: String,
     pub range: String,
     pub display_value: String,
@@ -142,9 +160,9 @@ pub struct Measurement {
     pub bar_polarity: bool,
 }
 
-impl Measurement {
+impl Unit161dReading {
     /**
-     * Creates a new Measurement instance.
+     * Creates a new Reading instance.
      *
      * # Arguments
      * `bytes` - A vector of bytes representing the raw measurement data.
@@ -184,7 +202,7 @@ impl Measurement {
         let peak_min = bytes[13] & 2 > 0;
         let bar_polarity = bytes[13] & 1 > 0;
 
-        Some(Measurement {
+        Some(Unit161dReading {
             mode,
             range,
             display_value,
@@ -207,3 +225,124 @@ impl Measurement {
         })
     }
 }
+
+impl Reading for Unit161dReading {
+    /**
+     * Returns the measurement data in CSV format.
+     *
+     * # Returns
+     * A Result containing a String in CSV format or an ApplicationError.
+     */
+    fn get_csv(&self) -> Result<String, ApplicationError> {
+        Ok(format!(
+            "{},{},{},{},{},{:?},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            self.mode,
+            self.range,
+            self.display_value,
+            self.overload,
+            self.ncv,
+            self.decimal_value,
+            self.display_unit,
+            self.progres,
+            self.max,
+            self.min,
+            self.hold,
+            self.rel,
+            self.auto,
+            self.battery,
+            self.hwwarning,
+            self.dc,
+            self.peak_max,
+            self.peak_min,
+            self.bar_polarity
+        ))
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+
+    #[test]
+    fn test_unit161d_reading_parse() {
+        let raw_data = vec![
+            2, 0, b'1', b'2', b'3', b'.', b'4', b'5', b'6', 5, 0, 0b00001110, 0b00000111, 0b00001111,
+        ];
+        let reading = Unit161dReading::parse(raw_data).unwrap();
+
+        assert_eq!(reading.mode, "DCV");
+        assert_eq!(reading.range, "\0");
+        assert_eq!(reading.display_value, "123.456");
+        assert_eq!(reading.overload, false);
+        assert_eq!(reading.ncv, false);
+        assert_eq!(reading.decimal_value, Some(123.456));
+        assert_eq!(reading.display_unit, "Unknown");
+        assert_eq!(reading.progres, 50);
+        assert_eq!(reading.max, true);
+        assert_eq!(reading.min, true);
+        assert_eq!(reading.hold, true);
+        assert_eq!(reading.rel, false);
+        assert_eq!(reading.auto, true);
+        assert_eq!(reading.battery, true);
+        assert_eq!(reading.hwwarning, true);
+        assert_eq!(reading.dc, true);
+        assert_eq!(reading.peak_max, true);
+        assert_eq!(reading.peak_min, true);
+        assert_eq!(reading.bar_polarity, true);
+    }
+
+    #[test]
+    fn test_unit161d_reading_get_csv() {
+        let reading = Unit161dReading {
+            mode: "DCV".to_string(),
+            range: "\0".to_string(),
+            display_value: "123.456".to_string(),
+            overload: false,
+            ncv: false,
+            decimal_value: Some(123.456),
+            display_unit: "V".to_string(),
+            progres: 50,
+            max: true,
+            min: true,
+            hold: true,
+            rel: false,
+            auto: true,
+            battery: true,
+            hwwarning: true,
+            dc: true,
+            peak_max: true,
+            peak_min: true,
+            bar_polarity: true,
+        };
+
+        let csv = reading.get_csv().unwrap();
+        let expected_csv = "DCV,\0,123.456,false,false,Some(123.456),V,50,true,true,true,false,true,true,true,true,true,true,true";
+        assert_eq!(csv, expected_csv);
+    }
+
+    #[test]
+    fn test_overload_detection() {
+        let overload_values = vec![".OL", "O.L", "OL.", "OL", "-.OL", "-O.L", "-OL.", "-OL"];
+        for value in overload_values {
+            assert!(is_overload(value));
+        }
+
+        let non_overload_values = vec!["123.45", "0.00", "9999", "NCV"];
+        for value in non_overload_values {
+            assert!(!is_overload(value));
+        }
+    }
+
+    #[test]
+    fn test_ncv_detection() {
+        let ncv_values = vec!["EF", "-", "--", "---", "----", "-----"];
+        for value in ncv_values {
+            assert!(is_ncv(value)); 
+        }
+        let non_ncv_values = vec!["123.45", "0.00", "9999", "OL"];
+        for value in non_ncv_values {
+            assert!(!is_ncv(value));
+        }
+    }
+}   

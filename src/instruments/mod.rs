@@ -1,4 +1,6 @@
 pub mod instrument;
-pub mod measurement;
-pub mod peaktech4055mv;
-pub mod unit161d;
+mod peaktech4055mv;
+mod unit161d;
+
+pub use peaktech4055mv::Peaktech4055mv;
+pub use unit161d::Unit161dHid;
