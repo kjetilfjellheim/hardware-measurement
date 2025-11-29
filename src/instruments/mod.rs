@@ -1,6 +1,9 @@
 pub mod instrument;
-mod peaktech4055mv;
+mod scpiusb;
 mod unit161d;
+mod command;
+mod readers;
 
-pub use peaktech4055mv::Peaktech4055mv;
+pub use scpiusb::ScpiUsb;
 pub use unit161d::Unit161dHid;
+pub use command::Command;

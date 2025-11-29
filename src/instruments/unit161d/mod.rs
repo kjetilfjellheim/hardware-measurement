@@ -1,4 +1,3 @@
-mod reading;
-mod instrumentation;
+mod communication;
 
-pub use instrumentation::Unit161dHid;
+pub use communication::Unit161dHid;

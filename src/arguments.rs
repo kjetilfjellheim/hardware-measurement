@@ -21,10 +21,18 @@ pub struct Args {
     ///
     /// Unit161d
     /// MinMax, NotMinMax, Range, Auto, Rel, Select2, Hold, Lamp, Select1, PMinMax, NotPeak, Measure
-    /// Peaktech4055mv
+    /// GenericScpiUsb (Peaktech4055mv)
     /// Apply:Waveform [Frequency, Amplitude, Offset]
     #[arg(long="command", num_args=1..)]
     pub commands: Vec<String>,
+
+    /// Reader type for interpreting instrument responses.. For scpi devices the default is ScpiRawReader.
+    #[arg(long)]
+    pub reader: Option<Reader>,
+
+    /// Output format. The default is Raw.
+    #[arg(long)]
+    pub format: Option<Format>,
 }
 
 impl Args {
@@ -45,7 +53,23 @@ impl Args {
 #[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
 pub enum Device {
     Unit161d,
-    Peaktech4055mv,
+    GenericScpiUsb,
+}
+/**
+ * Enum representing supported reader types.
+ */
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
+pub enum Reader {
+    ScpiRawReader,    
+}
+
+/**
+ * Enum representing supported output formats.
+ */
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
+pub enum Format {
+    Csv,
+    Raw,
 }
 
 #[cfg(test)]
@@ -77,14 +101,14 @@ mod test {
         let args = Args::parse_from(&[
             "test_program",
             "--device",
-            "peaktech4055mv",
+            "generic-scpi-usb",
             "--usb",
             "1234:5678",
             "--command",
             "Apply:Waveform 1000, 5, 0"
         ]);
 
-        assert_eq!(args.device, Device::Peaktech4055mv);
+        assert_eq!(args.device, Device::GenericScpiUsb);
         assert_eq!(args.usb, Some("1234:5678".to_string()));
         assert_eq!(args.commands, vec!["Apply:Waveform 1000, 5, 0".to_string()]);
     }

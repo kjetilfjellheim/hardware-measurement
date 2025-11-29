@@ -19,6 +19,6 @@ sudo ./target/debug/hardware-measurement --device=unit161d --hid=/dev/hidraw6 --
 sudo ./target/debug/hardware-measurement --device=unit161d --hid=/dev/hidraw6 --commands=MinMax
 
 ## Example commands Peaktech 4055mv
-sudo ./target/debug/hardware-measurement --device=peaktech4055mv --commands="Apply:Sin, 10kHz, 3, 0.4" --usb=17224:21815
-sudo ./target/debug/hardware-measurement --device=peaktech4055mv --commands="Reset" --usb=17224:21815
-sudo ./target/debug/hardware-measurement --device=peaktech4055mv --commands="Raw:Apply:Sin, 10kHz, 3, 0.4" --usb=17224:21815
+sudo ./target/debug/hardware-measurement --device=generic-scpi-usb --commands="Apply:Sin, 10kHz, 3, 0.4" --usb=17224:21815
+sudo ./target/debug/hardware-measurement --device=generic-scpi-usb --commands="Reset" --usb=17224:21815
+sudo ./target/debug/hardware-measurement --device=generic-scpi-usb --commands="Raw:Apply:Sin, 10kHz, 3, 0.4" --usb=17224:21815

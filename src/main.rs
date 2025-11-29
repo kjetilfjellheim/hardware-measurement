@@ -16,7 +16,10 @@ async fn main() -> Result<(), ApplicationError> {
         .command(args.commands.to_vec())
         .await?;
     if let Some(reading) = reading {
-        println!("{:?}", reading.get_csv()?);
+        match args.format.unwrap_or(arguments::Format::Raw) {
+            arguments::Format::Csv => println!("{:?}", reading.get_csv()?),
+            arguments::Format::Raw => println!("{:?}", reading.get_raw()?),
+        }
     }
     Ok(())
 }

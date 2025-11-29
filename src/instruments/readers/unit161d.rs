@@ -1,4 +1,4 @@
-use crate::{error::ApplicationError, instruments::instrument::Reading};
+use crate::{error::ApplicationError, instruments::readers::Reading};
 
 // Decoded modes
 const MODE: [&str; 31] = [
@@ -114,7 +114,7 @@ fn get_unit(mode: &str, range: &str) -> Option<&'static str> {
  * Checks if the display value indicates overload.
  * # Arguments
  * `value` - A string slice representing the display value.
- * 
+ *
  * # Returns
  * A boolean indicating whether the value represents an overload.
  */
@@ -126,7 +126,7 @@ fn is_overload(value: &str) -> bool {
  * Checks if the display value indicates NCV (Non-Contact Voltage).
  * # Arguments
  * `value` - A string slice representing the display value.
- * 
+ *
  * # Returns
  * A boolean indicating whether the value represents NCV.
  */
@@ -257,6 +257,16 @@ impl Reading for Unit161dReading {
             self.bar_polarity
         ))
     }
+
+    /**
+     * Returns the raw measurement data as a string. 
+     *
+     * # Returns
+     * A Result containing a String with the raw data or an ApplicationError.
+     */
+    fn get_raw(&self) -> Result<String, ApplicationError> {
+        self.get_csv()
+    }
 }
 
 #[cfg(test)]
@@ -267,7 +277,8 @@ mod test {
     #[test]
     fn test_unit161d_reading_parse() {
         let raw_data = vec![
-            2, 0, b'1', b'2', b'3', b'.', b'4', b'5', b'6', 5, 0, 0b00001110, 0b00000111, 0b00001111,
+            2, 0, b'1', b'2', b'3', b'.', b'4', b'5', b'6', 5, 0, 0b00001110, 0b00000111,
+            0b00001111,
         ];
         let reading = Unit161dReading::parse(raw_data).unwrap();
 
@@ -338,11 +349,11 @@ mod test {
     fn test_ncv_detection() {
         let ncv_values = vec!["EF", "-", "--", "---", "----", "-----"];
         for value in ncv_values {
-            assert!(is_ncv(value)); 
+            assert!(is_ncv(value));
         }
         let non_ncv_values = vec!["123.45", "0.00", "9999", "OL"];
         for value in non_ncv_values {
             assert!(!is_ncv(value));
         }
     }
-}   
+}

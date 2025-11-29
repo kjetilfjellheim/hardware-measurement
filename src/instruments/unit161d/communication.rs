@@ -5,8 +5,7 @@ use async_trait::async_trait;
 use crate::{
     error::ApplicationError,
     instruments::{
-        instrument::{Communication, Reading},
-        unit161d::reading::Unit161dReading,
+        command::Uni161dCommand, instrument::Communication, readers::{Reading, Unit161dReading}
     },
 };
 
@@ -66,9 +65,9 @@ impl Unit161dHid {
         let mut buf = vec![0u8; 1 + len];
         buf[0] = len as u8;
         buf[1..].copy_from_slice(data);
-        self.hiddevice.write(&buf).map_err(|e| {
-            ApplicationError::Hid(format!("Failed to write to HID device: {}", e))
-        })?;
+        self.hiddevice
+            .write(&buf)
+            .map_err(|e| ApplicationError::Hid(format!("Failed to write to HID device: {}", e)))?;
         Ok(())
     }
 
@@ -170,91 +169,29 @@ impl Communication for Unit161dHid {
             seq.extend_from_slice(&cmd_bytes);
             let _ = self.write_with_length(&seq)?;
             // Only Measure command returns a measurement. All other commands return nothing.
-            if let Some(parsed_measurement) = self.read_response()?.and_then(Unit161dReading::parse){
+            if let Some(parsed_measurement) = self.read_response()?.and_then(Unit161dReading::parse)
+            {
                 measurement = Some(Box::new(parsed_measurement));
             }
         }
         Ok(measurement)
     }
-    /**
-     * Returns the unique identifier of the instrument.
-     *
-     * # Returns
-     * A String representing the device information.
-     */
-    fn get_device_info(&self) -> String {
-        self.hiddevice
-            .get_device_info()
-            .map(|info| {
-                format!(
-                    "Unit161d HID - Manufacturer: {:?}, Product: {:?}, Serial Number: {:?}",
-                    info.manufacturer_string(),
-                    info.product_string(),
-                    info.serial_number()
-                )
-            })
-            .unwrap_or("Unit161d HID - Unknown Device".to_string())
-    }
-}
-
-/**
- * Enum representing various commands for the Uni-T 161D instrument.
- */
-#[derive(Debug, PartialEq)]
-pub enum Uni161dCommand {
-    Measure = 94,
-    MinMax = 65,
-    NotMinMax = 66,
-    Range = 70,
-    Auto = 71,
-    Rel = 72,
-    Select2 = 73,
-    Hold = 74,
-    Lamp = 75,
-    Select1 = 76,
-    PMinMax = 77,
-    NotPeak = 78,
-}
-
-impl TryFrom<String> for Uni161dCommand {
-    type Error = ApplicationError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.as_str() {
-            "Measure" => Ok(Uni161dCommand::Measure),
-            "MinMax" => Ok(Uni161dCommand::MinMax),
-            "NotMinMax" => Ok(Uni161dCommand::NotMinMax),
-            "Range" => Ok(Uni161dCommand::Range),
-            "Auto" => Ok(Uni161dCommand::Auto),
-            "Rel" => Ok(Uni161dCommand::Rel),
-            "Select2" => Ok(Uni161dCommand::Select2),
-            "Hold" => Ok(Uni161dCommand::Hold),
-            "Lamp" => Ok(Uni161dCommand::Lamp),
-            "Select1" => Ok(Uni161dCommand::Select1),
-            "PMinMax" => Ok(Uni161dCommand::PMinMax),
-            "NotPeak" => Ok(Uni161dCommand::NotPeak),
-            _ => Err(ApplicationError::Command(format!(
-                "Unknown command: {}",
-                value
-            ))),
-        }
-    }
 }
 
 mod test {
-    use super::*;
 
     #[test]
     fn test_try_from_command() {
         assert_eq!(
-            Uni161dCommand::try_from("Measure".to_string()).unwrap(),
-            Uni161dCommand::Measure
+            crate::instruments::command::Uni161dCommand::try_from("Measure".to_string()).unwrap(),
+            crate::instruments::command::Uni161dCommand::Measure
         );
         assert_eq!(
-            Uni161dCommand::try_from("MinMax".to_string()).unwrap(),
-            Uni161dCommand::MinMax
+            crate::instruments::command::Uni161dCommand::try_from("MinMax".to_string()).unwrap(),
+            crate::instruments::command::Uni161dCommand::MinMax
         );
-        assert!(Uni161dCommand::try_from("Unknown".to_string()).is_err());
-
+        assert!(
+            crate::instruments::command::Uni161dCommand::try_from("Unknown".to_string()).is_err()
+        );
     }
 }

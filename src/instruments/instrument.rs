@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use crate::{
     arguments::{self, Args},
     error::ApplicationError,
-    instruments::{Peaktech4055mv, Unit161dHid},
+    instruments::{ScpiUsb, Unit161dHid, readers::Reading},
 };
 
 /**
@@ -24,33 +24,13 @@ pub trait Communication {
         &self,
         commands: Vec<String>,
     ) -> Result<Option<Box<dyn Reading>>, ApplicationError>;
-    /**
-     * Returns information about the device.
-     *
-     * # Returns
-     * A String containing device information.
-     */
-    fn get_device_info(&self) -> String;
-}
 
-/**
- * Defines the Reading trait for measurement data returned by instruments.
- */
-#[async_trait(?Send)]
-pub trait Reading {
-    /**
-     * Returns the measurement data in CSV format.
-     *
-     * # Returns
-     * A Result containing a String in CSV format or an ApplicationError.
-     */
-    fn get_csv(&self) -> Result<String, ApplicationError>;
 }
 
 pub async fn get_device(args: &Args) -> Result<Box<dyn Communication>, ApplicationError> {
     match args.device {
         arguments::Device::Unit161d => get_unit161d(args),
-        arguments::Device::Peaktech4055mv => get_peaktech4055mv(args).await,
+        arguments::Device::GenericScpiUsb => get_scpiusb_device(args).await,
     }
 }
 
@@ -79,7 +59,7 @@ fn get_unit161d(args: &Args) -> Result<Box<dyn Communication>, ApplicationError>
 }
 
 /**
- * Initializes and returns a Peaktech4055mv instrument instance.
+ * Initializes and returns a ScpiUsb instrument instance.
  *
  * # Arguments
  * `args` - An Args instance containing command-line arguments.
@@ -87,16 +67,16 @@ fn get_unit161d(args: &Args) -> Result<Box<dyn Communication>, ApplicationError>
  * # Returns
  * A Result containing a boxed Instrument instance or an ApplicationError.
  */
-async fn get_peaktech4055mv(args: &Args) -> Result<Box<dyn Communication>, ApplicationError> {
+async fn get_scpiusb_device(args: &Args) -> Result<Box<dyn Communication>, ApplicationError> {
     let usb = match &args.usb {
-        Some(usb_path) => usb_path,
+        Some(usb_device_id) => usb_device_id,
         None => {
             return Err(ApplicationError::General(
-                "Peaktech4055mv requires usb path".into(),
+                "ScpiUsb requires usb device".into(),
             ))
         }
     };
-    match Peaktech4055mv::new(usb).await {
+    match ScpiUsb::new(usb, args.reader.clone()).await {
         Ok(device) => Ok(Box::new(device)),
         Err(e) => Err(e),
     }
