@@ -1,6 +1,5 @@
 use crate::error::ApplicationError;
 
-
 /**
  * Enum representing various commands for the Uni-T 161D instrument.
  */
@@ -47,16 +46,18 @@ impl TryFrom<String> for Uni161dCommand {
 
 #[cfg(test)]
 mod test {
+    use crate::instruments::command::unit161d::Uni161dCommand;
+
     #[test]
     fn test_try_from_command() {
         assert_eq!(
-            crate::instruments::command::Uni161dCommand::try_from("Measure".to_string()).unwrap(),
-            crate::instruments::command::Uni161dCommand::Measure
+            Uni161dCommand::try_from("Measure".to_string()).unwrap(),
+            Uni161dCommand::Measure
         );
         assert_eq!(
-            crate::instruments::command::Uni161dCommand::try_from("MinMax".to_string()).unwrap(),
-            crate::instruments::command::Uni161dCommand::MinMax
+            Uni161dCommand::try_from("MinMax".to_string()).unwrap(),
+            Uni161dCommand::MinMax
         );
-        assert!(crate::instruments::command::Uni161dCommand::try_from("Unknown".to_string()).is_err());
+        assert!(Uni161dCommand::try_from("Unknown".to_string()).is_err());
     }
 }

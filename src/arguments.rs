@@ -33,6 +33,17 @@ pub struct Args {
     /// Output format. The default is Raw.
     #[arg(long)]
     pub format: Option<Format>,
+
+    /// USB interface number.
+    #[arg(long)]
+    pub interface_number: Option<u8>,
+
+    /// USB Bulk IN endpoint address.
+    #[arg(long)]
+    pub bulk_in_address: Option<u8>,
+    /// USB Bulk OUT endpoint address.
+    #[arg(long)]
+    pub bulk_out_address: Option<u8>,
 }
 
 impl Args {
@@ -54,6 +65,7 @@ impl Args {
 pub enum Device {
     Unit161d,
     GenericScpiUsb,
+    Peaktech4055mvUsb
 }
 /**
  * Enum representing supported reader types.
@@ -70,6 +82,7 @@ pub enum Reader {
 pub enum Format {
     Csv,
     Raw,
+    RawString
 }
 
 #[cfg(test)]

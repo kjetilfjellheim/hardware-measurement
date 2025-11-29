@@ -1,4 +1,4 @@
-use crate::{error::ApplicationError, instruments::readers::Reading};
+use crate::{error::ApplicationError, instruments::reading::Reading};
 
 // Decoded modes
 const MODE: [&str; 31] = [
@@ -139,6 +139,7 @@ fn is_ncv(value: &str) -> bool {
  */
 #[derive(Debug)]
 pub struct Unit161dReading {
+    pub original_bytes: Vec<u8>,
     pub mode: String,
     pub range: String,
     pub display_value: String,
@@ -203,6 +204,7 @@ impl Unit161dReading {
         let bar_polarity = bytes[13] & 1 > 0;
 
         Some(Unit161dReading {
+            original_bytes: bytes.clone(),
             mode,
             range,
             display_value,
@@ -259,13 +261,25 @@ impl Reading for Unit161dReading {
     }
 
     /**
-     * Returns the raw measurement data as a string. 
+     * Returns the raw measurement data as a byte vector. 
      *
      * # Returns
-     * A Result containing a String with the raw data or an ApplicationError.
+     * A Result containing a byte vector with the raw data or an ApplicationError.
      */
-    fn get_raw(&self) -> Result<String, ApplicationError> {
-        self.get_csv()
+    fn get_raw(&self) -> Result<Vec<u8>, ApplicationError> {
+        Ok(self.original_bytes.clone())
+    }
+
+    /**
+     * Returns the measurement data as a string.
+     *
+     * # Returns
+     * A Result containing a String with the raw representation or an ApplicationError.
+     */
+    fn get_raw_string(&self) -> Result<String,ApplicationError> {
+        String::from_utf8(self.original_bytes.clone()).map_err(|e| {
+            ApplicationError::General(format!("Failed to convert raw bytes to string: {}", e))
+        })
     }
 }
 
@@ -306,6 +320,7 @@ mod test {
     #[test]
     fn test_unit161d_reading_get_csv() {
         let reading = Unit161dReading {
+            original_bytes: vec![],
             mode: "DCV".to_string(),
             range: "\0".to_string(),
             display_value: "123.456".to_string(),

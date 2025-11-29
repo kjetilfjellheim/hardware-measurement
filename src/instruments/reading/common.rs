@@ -16,10 +16,18 @@ pub trait Reading {
     fn get_csv(&self) -> Result<String, ApplicationError>;
 
     /**
+     * Returns the raw measurement data as a byte vector.
+     *
+     * # Returns
+     * The raw measurement as a byte vector.
+     */
+    fn get_raw(&self) -> Result<Vec<u8>, ApplicationError>;
+
+    /**
      * Returns the raw measurement data as a String.
      *
      * # Returns
      * The raw measurement as a String.
      */
-    fn get_raw(&self) -> Result<String, ApplicationError>;
+    fn get_raw_string(&self) -> Result<String, ApplicationError>;
 }

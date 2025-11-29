@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 
 use crate::{
-    arguments, error::ApplicationError, instruments::{
-        Command, instrument::Communication, readers::{Reading, ScpiRawReading}
-    }
+    arguments,
+    error::ApplicationError,
+    instruments::{
+        communication::common::Communication, reading::{Reading, ScpiRawReading}
+    },
 };
 use nusb::{
     list_devices,
@@ -12,21 +14,29 @@ use nusb::{
 };
 
 /**
- * USB Bulk OUT endpoint address for ScpiUsb.
- */
-const BULK_OUT_ADDRESS: u8 = 0x02;
-/**
- * USB Bulk IN endpoint address for ScpiUsb.
- */
-const BULK_IN_ADDRESS: u8 = 0x82;
-/**
  * Module for the ScpiUsb instrument using USB.
  */
 pub struct ScpiUsb {
-    // HID Device instance
+    /** 
+    * USB Device Info 
+    */
     device: DeviceInfo,
-    // Reader for interpreting instrument responses
+    /**
+    * Reader type for interpreting instrument responses.
+    */
     reader: arguments::Reader,
+    /**
+     * USB interface number.
+     */
+    interface_number: u8,
+    /**
+     * USB Bulk IN endpoint address.
+     */
+    bulk_in_address: u8,
+    /**
+     * USB Bulk OUT endpoint address.
+     */
+    bulk_out_address: u8,
 }
 
 impl ScpiUsb {
@@ -39,14 +49,25 @@ impl ScpiUsb {
      * # Returns
      * A new ScpiUsb instance.
      */
-    pub async fn new(device: &str, reader: Option<arguments::Reader>) -> Result<Self, ApplicationError> {
-        
+    pub async fn new(
+        device: &str,
+        reader: Option<arguments::Reader>,
+        interface_number: u8,
+        bulk_in_address: u8,
+        bulk_out_address: u8,
+    ) -> Result<Self, ApplicationError> {
         let device = list_devices()
             .await
             .map_err(|e| ApplicationError::Usb(format!("Could not list usb devices: {}", e)))?
             .find(|dev| format!("{:x}:{:x}", dev.vendor_id(), dev.product_id()) == device)
             .ok_or_else(|| ApplicationError::Usb("ScpiUsb device not found".into()))?;
-        Ok(Self { device, reader:reader.unwrap_or(arguments::Reader::ScpiRawReader) } )
+        Ok(Self {
+            device,
+            reader: reader.unwrap_or(arguments::Reader::ScpiRawReader),
+            interface_number,
+            bulk_in_address,
+            bulk_out_address,
+        })
     }
 
     /**
@@ -58,12 +79,11 @@ impl ScpiUsb {
      * # Returns
      * A boxed Reading instance.
      */
-    fn get_reading(&self, data: Vec<String>) -> Box<dyn Reading> {
+    fn get_reading(&self, data: Vec<u8>) -> Box<dyn Reading> {
         match self.reader {
-            arguments::Reader::ScpiRawReader => Box::new(ScpiRawReading::new(data))
+            arguments::Reader::ScpiRawReader => Box::new(ScpiRawReading::new(data)),
         }
     }
-
 }
 
 #[async_trait(?Send)]
@@ -77,38 +97,37 @@ impl Communication for ScpiUsb {
     async fn command(
         &self,
         commands: Vec<String>,
-    ) -> Result<Option<Box<dyn Reading>>, ApplicationError> {
-        let mut response: Option<Vec<String>> = None;
-
-        let parsed_commands: Vec<Box<dyn Command>> = commands
-            .iter()
-            .map(|cmd_str| {
-                let command: Result<Box<dyn Command>, ApplicationError> =
-                    cmd_str.clone().try_into();
-                command
-            })
-            .collect::<Result<Vec<Box<dyn Command>>, ApplicationError>>()?;
-
+    ) -> Result<Option<Vec<Box<dyn Reading>>>, ApplicationError> {
         let open_device = self
             .device
             .open()
             .await
             .map_err(|e| ApplicationError::Usb(format!("Could not open usb device: {}", e)))?;
+        // Claim the interface
         let interface = open_device
-            .claim_interface(0)
+            .claim_interface(self.interface_number)
             .await
-            .map_err(|e| ApplicationError::Usb(format!("Could not open interface 0: {}", e)))?;
+            .map_err(|e| ApplicationError::Usb(format!("Could not open interface {}: {}", self.interface_number, e)))?;
         // Get the endpoint and submit transfer
         let mut endpoint_out = interface
-            .endpoint::<Bulk, Out>(BULK_OUT_ADDRESS)
-            .map_err(|e| ApplicationError::Usb(format!("Failed to get endpoint: {}", e)))?;
+            .endpoint::<Bulk, Out>(self.bulk_out_address)
+            .map_err(|e| ApplicationError::Usb(format!("Failed to get endpoint {}: {}", self.bulk_out_address, e)))?;
 
         let mut endpoint_in = interface
-            .endpoint::<Bulk, nusb::transfer::In>(BULK_IN_ADDRESS)
-            .map_err(|e| ApplicationError::Usb(format!("Failed to get endpoint: {}", e)))?;
+            .endpoint::<Bulk, nusb::transfer::In>(self.bulk_in_address)
+            .map_err(|e| ApplicationError::Usb(format!("Failed to get endpoint {}: {}", self.bulk_in_address, e)))?;
 
-        for command in parsed_commands {
-            let command_bytes = command.to_command();
+        let mut response: Vec<Box<dyn Reading>> = Vec::new();
+
+        for command in commands {
+
+            let command_bytes = if command.clone().ends_with('\n') {
+                command.clone().into_bytes()
+            } else {
+                let mut cmd_bytes = command.clone().into_bytes();
+                cmd_bytes.push(b'\n');
+                cmd_bytes
+            };
 
             let buffer = Buffer::from(command_bytes);
 
@@ -125,18 +144,15 @@ impl Communication for ScpiUsb {
                 }
             }
 
-            if command.is_query() {
-                let read_buffer = Buffer::new(2048);
+            let data_as_vec: Option<Vec<u8>> = if command.contains('?') {
+                let read_buffer = Buffer::new(2000000);
                 endpoint_in.submit(read_buffer);
                 let completion = endpoint_in.next_complete().await;
 
                 match completion.status {
                     Ok(()) => {
                         let data = completion.buffer.to_vec();
-                        let response_str =
-                            String::from_utf8_lossy(&data[..completion.actual_len]).to_string();
-                        let resp = response.get_or_insert(Vec::new());
-                        resp.push(response_str);
+                        Some(data)
                     }
                     Err(e) => {
                         return Err(ApplicationError::Command(format!(
@@ -145,12 +161,18 @@ impl Communication for ScpiUsb {
                         )))
                     }
                 }
+            } else {
+                None
+            };
+
+            if let Some(data) = data_as_vec {
+                response.push(self.get_reading(data));
             }
         }
 
-        Ok(match response {
-            Some(data) => Some(self.get_reading(data)),
-            None => None,
+        Ok(match response.is_empty() {
+            false => Some(response),
+            true => None,
         })
     }
 }

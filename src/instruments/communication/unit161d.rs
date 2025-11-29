@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use crate::{
     error::ApplicationError,
     instruments::{
-        command::Uni161dCommand, instrument::Communication, readers::{Reading, Unit161dReading}
+        command::Uni161dCommand, communication::common::Communication, reading::{Reading, Unit161dReading}
     },
 };
 
@@ -146,17 +146,12 @@ impl Unit161dHid {
 
 #[async_trait(?Send)]
 impl Communication for Unit161dHid {
-    /**
-     * Sends a command to the instrument.
-     *
-     * # Arguments
-     * `command` - A Command enum variant representing the command to be sent.
-     */
+
     async fn command(
         &self,
         commands: Vec<String>,
-    ) -> Result<Option<Box<dyn Reading>>, ApplicationError> {
-        let mut measurement: Option<Box<dyn Reading>> = None;
+    ) -> Result<Option<Vec<Box<dyn Reading>>>, ApplicationError> {
+        let mut measurements: Vec<Box<dyn Reading>> = Vec::new();
         for command in commands {
             let mut cmd = Uni161dCommand::try_from(command)? as u16;
             let mut cmd_bytes = [0u8; 3];
@@ -168,30 +163,31 @@ impl Communication for Unit161dHid {
             seq.extend_from_slice(&SEQUENCE_SEND_CMD);
             seq.extend_from_slice(&cmd_bytes);
             let _ = self.write_with_length(&seq)?;
-            // Only Measure command returns a measurement. All other commands return nothing.
             if let Some(parsed_measurement) = self.read_response()?.and_then(Unit161dReading::parse)
             {
-                measurement = Some(Box::new(parsed_measurement));
+                measurements.push(Box::new(parsed_measurement));
             }
         }
-        Ok(measurement)
+        Ok(Some(measurements))
+
     }
 }
 
 mod test {
+    use crate::instruments::command::Uni161dCommand;
 
     #[test]
     fn test_try_from_command() {
         assert_eq!(
-            crate::instruments::command::Uni161dCommand::try_from("Measure".to_string()).unwrap(),
-            crate::instruments::command::Uni161dCommand::Measure
+            Uni161dCommand::try_from("Measure".to_string()).unwrap(),
+            Uni161dCommand::Measure
         );
         assert_eq!(
-            crate::instruments::command::Uni161dCommand::try_from("MinMax".to_string()).unwrap(),
-            crate::instruments::command::Uni161dCommand::MinMax
+            Uni161dCommand::try_from("MinMax".to_string()).unwrap(),
+            Uni161dCommand::MinMax
         );
         assert!(
-            crate::instruments::command::Uni161dCommand::try_from("Unknown".to_string()).is_err()
+            Uni161dCommand::try_from("Unknown".to_string()).is_err()
         );
     }
 }
